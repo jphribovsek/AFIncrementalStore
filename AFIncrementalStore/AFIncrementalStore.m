@@ -600,34 +600,24 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
         for (NSManagedObject *updatedObject in [saveChangesRequest updatedObjects]) {
             NSManagedObjectID *backingObjectID = [self objectIDForBackingObjectForEntity:[updatedObject entity] withResourceIdentifier:AFResourceIdentifierFromReferenceObject([self referenceObjectForObjectID:updatedObject.objectID])];
 
+            [backingContext performBlockAndWait:^{
+                NSManagedObject *backingObject = [backingContext existingObjectWithID:backingObjectID error:nil];
+                [self updateBackingObject:backingObject withAttributeAndRelationshipValuesFromManagedObject:updatedObject];
+                [backingContext save:nil];
+            }];
+            
             NSURLRequest *request = [self.HTTPClient requestForUpdatedObject:updatedObject];
             if (!request) {
-                [backingContext performBlockAndWait:^{
-                    NSManagedObject *backingObject = [backingContext existingObjectWithID:backingObjectID error:nil];
-                    [self updateBackingObject:backingObject withAttributeAndRelationshipValuesFromManagedObject:updatedObject];
-                    [backingContext save:nil];
-                }];
+                
                 continue;
             }
             
             AFHTTPRequestOperation *operation = [self.HTTPClient HTTPRequestOperationWithRequest:request success:^(AFHTTPRequestOperation *operation, id responseObject) {
-                id representationOrArrayOfRepresentations = [self.HTTPClient representationOrArrayOfRepresentationsOfEntity:[updatedObject entity]  fromResponseObject:responseObject];
-                if ([representationOrArrayOfRepresentations isKindOfClass:[NSDictionary class]]) {
-                    NSDictionary *representation = (NSDictionary *)representationOrArrayOfRepresentations;
-                    [updatedObject setValuesForKeysWithDictionary:[self.HTTPClient attributesForRepresentation:representation ofEntity:updatedObject.entity fromResponse:operation.response]];
-
-                    [backingContext performBlockAndWait:^{
-                        NSManagedObject *backingObject = [backingContext existingObjectWithID:backingObjectID error:nil];
-                        [self updateBackingObject:backingObject withAttributeAndRelationshipValuesFromManagedObject:updatedObject];
-                        [backingContext save:nil];
-                    }];
-
-                    [context refreshObject:updatedObject mergeChanges:YES];
-                }
+                
             } failure:^(AFHTTPRequestOperation *operation, NSError *error) {
                 NSLog(@"Update Error: %@", error);
-                [context refreshObject:updatedObject mergeChanges:NO];
             }];
+
             
             [mutableOperations addObject:operation];
         }
